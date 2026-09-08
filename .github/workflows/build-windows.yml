@@ -1,0 +1,84 @@
+name: Build Windows (dev artifact)
+
+# Fork-only helper: builds an unsigned Windows installer for manual testing
+# and uploads it as a workflow artifact. Not part of upstream.
+on:
+  push:
+    branches:
+      - 'ci/**'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      # The upstream config enables updater artifacts, which need the release
+      # signing key. The fork has no such secret, so disable them for this build.
+      # Override written to a file: no JSON quoting issues on the command line.
+      - name: Write CI config override
+        shell: bash
+        run: echo '{"bundle":{"createUpdaterArtifacts":false}}' > tauri.ci.conf.json
+
+      # Must run under pwsh, not bash: Git Bash puts its MSYS perl first in
+      # PATH and openssl-src (vendored OpenSSL for russh) fails to configure
+      # with it. The default shell finds Strawberry Perl, like upstream CI.
+      - name: Build the app (NSIS installer, no updater artifacts)
+        shell: pwsh
+        run: |
+          pnpm tauri build --bundles nsis --config tauri.ci.conf.json 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Raw logs and artifacts need a signed-in viewer; a file on a branch is
+      # readable anonymously via raw.githubusercontent.com. Force-push the log
+      # of every run to an orphan `ci-logs` branch (fork-only helper).
+      - name: Publish build log to the ci-logs branch
+        if: always()
+        shell: bash
+        env:
+          RUN_ID: ${{ github.run_id }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          mkdir -p /tmp/ci-logs && cp build.log /tmp/ci-logs/build-windows.log
+          cd /tmp/ci-logs
+          git init -q -b ci-logs
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add build-windows.log
+          git commit -q -m "build-windows log for run $RUN_ID"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:ci-logs
+        # GITHUB_TOKEN is provided by the runner; no user secret involved.
+
+      - name: Upload installer and portable exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: r-shell-windows-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/r-shell.exe

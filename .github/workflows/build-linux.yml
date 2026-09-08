@@ -1,0 +1,67 @@
+name: Build Linux (dev artifact)
+
+# Fork-only helper: builds unsigned .deb and .AppImage packages for manual
+# testing and uploads them as a workflow artifact. Not part of upstream.
+on:
+  push:
+    branches:
+      - 'ci/**'
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # Same package list as the upstream release workflow.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      # The upstream config enables updater artifacts, which need the release
+      # signing key. The fork has no such secret, so disable them for this build.
+      - name: Write CI config override
+        run: echo '{"bundle":{"createUpdaterArtifacts":false}}' > tauri.ci.conf.json
+
+      - name: Build the app (deb + AppImage, no updater artifacts)
+        run: pnpm tauri build --bundles deb,appimage --config tauri.ci.conf.json
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: r-shell-linux-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
