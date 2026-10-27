@@ -16,7 +16,7 @@
  */
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 const lifecycle = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -55,11 +55,30 @@ class FakeResizeObserver {
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
+  static OPEN = 1;
   readyState = 0;
   binaryType = '';
+  onmessage: ((event: { data: string }) => void) | null = null;
   constructor(_url: string) { FakeWebSocket.instances.push(this); }
   send() {}
   close() {}
+}
+
+async function measure(width: number, height: number) {
+  await act(async () => {
+    const observer = FakeResizeObserver.instances.filter(o => o.targets.length > 0).at(-1)!;
+    observer.callback([{ contentRect: { width, height } }]);
+  });
+  await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+}
+
+function fullscreen(element: Element | null) {
+  Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: element });
+  fireEvent(document, new Event('fullscreenchange'));
+}
+
+function resizeRequests() {
+  return lifecycle.invoke.mock.calls.filter(([command]) => command === 'desktop_resize').map(([, request]) => request);
 }
 
 function viewerProps(overrides: Record<string, unknown> = {}) {
@@ -88,9 +107,11 @@ describe('DesktopViewer window-fit scaling', () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
     vi.useRealTimers();
-    cleanup();
+    Reflect.deleteProperty(document, 'fullscreenElement');
+    Reflect.deleteProperty(document, 'exitFullscreen');
   });
 
   it('attaches the ResizeObserver only once the connected render exists, then requests a matching remote resolution', async () => {
@@ -127,5 +148,76 @@ describe('DesktopViewer window-fit scaling', () => {
     render(<DesktopViewer {...viewerProps({ isConnected: false })} />);
     await vi.advanceTimersByTimeAsync(2000);
     expect(lifecycle.invoke.mock.calls.some(([cmd]) => cmd === 'desktop_resize')).toBe(false);
+  });
+
+  it('returns to the initial physical resolution after a fullscreen round trip on a Retina display', async () => {
+    vi.stubGlobal('devicePixelRatio', 2);
+    const view = render(<DesktopViewer {...viewerProps({ rdpResolution: 'fit' })} />);
+    await measure(800, 450);
+    const container = view.container.querySelector('canvas')!.closest('[tabindex]')!;
+    const requestFullscreen = vi.fn(async () => fullscreen(container));
+    Object.defineProperty(container, 'requestFullscreen', { configurable: true, value: requestFullscreen });
+    Object.defineProperty(document, 'exitFullscreen', { configurable: true, value: vi.fn(async () => fullscreen(null)) });
+
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Full Screen', exact: true })));
+    await measure(1280, 720);
+    expect(screen.getByRole('button', { name: 'Exit Full Screen' })).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Exit Full Screen' })));
+    await measure(800, 450);
+
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+    expect(resizeRequests()).toEqual([
+      { connectionId: 'conn-1', width: 1600, height: 900 },
+      { connectionId: 'conn-1', width: 2560, height: 1440 },
+      { connectionId: 'conn-1', width: 1600, height: 900 },
+    ]);
+  });
+
+  it('keeps a fixed 1080p desktop through fullscreen and Escape while scaling the canvas to fit', async () => {
+    const view = render(<DesktopViewer {...viewerProps({ rdpResolution: '1920x1080' })} />);
+    await measure(800, 450);
+    await act(async () => {
+      FakeWebSocket.instances[0].onmessage?.({ data: JSON.stringify({
+        type: 'DesktopStarted', connection_id: 'conn-1', width: 1920, height: 1080,
+      }) });
+    });
+    const canvas = view.container.querySelector('canvas')!;
+    const container = canvas.closest('[tabindex]')!;
+    fullscreen(container);
+    await measure(1280, 720);
+    expect(canvas.style.width).toBe('1280px');
+    // Escape exits through the fullscreenchange event, without the toolbar.
+    fullscreen(null);
+    await measure(800, 450);
+    expect(canvas.width).toBe(1920);
+    expect(canvas.height).toBe(1080);
+    expect(canvas.style.width).toBe('800px');
+    expect(canvas.style.height).toBe('450px');
+    expect(resizeRequests()).toEqual([]);
+  });
+
+  it('does not mark this session fullscreen when a different element enters fullscreen', () => {
+    render(<DesktopViewer {...viewerProps()} />);
+    fullscreen(document.createElement('div'));
+    expect(screen.getByRole('button', { name: 'Full Screen', exact: true })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Exit Full Screen' })).toBeNull();
+  });
+
+  it('cancels a pending resize when popped out and measures the restored tab again', async () => {
+    render(<DesktopViewer {...viewerProps()} />);
+    await measure(800, 450);
+    lifecycle.invoke.mockClear();
+    await act(async () => {
+      const observer = FakeResizeObserver.instances.filter(o => o.targets.length > 0).at(-1)!;
+      observer.callback([{ contentRect: { width: 1280, height: 720 } }]);
+    });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open in Separate Window' })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(resizeRequests()).toEqual([]);
+    expect(FakeResizeObserver.instances.some(o => o.targets.length > 0)).toBe(false);
+
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Show in Tab' })));
+    await measure(800, 450);
+    expect(resizeRequests()).toEqual([{ connectionId: 'conn-1', width: 800, height: 450 }]);
   });
 });

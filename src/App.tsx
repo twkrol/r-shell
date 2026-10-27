@@ -125,6 +125,16 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 function AppContent() {
   const { t } = useTranslation();
+  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const updateWidth = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
+  // The panel wrapper uses percentages. Resolve readable sidebar widths before
+  // the first layout, and cap them so small windows still have a main area.
+  const leftSidebarMinSize = Math.min(35, 220 / Math.max(windowWidth - 12, 1) * 100);
+  const rightSidebarMinSize = Math.min(35, 260 / Math.max(windowWidth - 12, 1) * 100);
   const [selectedConnection, setSelectedConnection] = useState<ConnectionNode | null>(null);
 
   // Terminal group state from context
@@ -2338,7 +2348,7 @@ function AppContent() {
   const hideExtraPanels = isFileBrowserTab || isDesktopTab || isEditorTab;
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-screen flex flex-col overflow-hidden bg-background">
       <UpdateChecker
         checkSignal={updateCheckSignal}
         openDialogSignal={updateDialogSignal}
@@ -2416,9 +2426,9 @@ function AppContent() {
               <ResizablePanel
                 id="left-sidebar"
                 order={1}
-                defaultSize={layout.leftSidebarSize}
-                minSize={12}
-                maxSize={30}
+                defaultSize={Math.max(layout.leftSidebarSize, leftSidebarMinSize)}
+                minSize={leftSidebarMinSize}
+                maxSize={35}
               >
                 <ConnectionManager
                   onConnectionSelect={handleConnectionSelect}
@@ -2444,7 +2454,7 @@ function AppContent() {
           <ResizablePanel
             id="main-content"
             order={2}
-            defaultSize={100 - (layout.leftSidebarVisible ? layout.leftSidebarSize : 0) - ((layout.rightSidebarVisible && hasAnyTabs && !hideExtraPanels) ? layout.rightSidebarSize : 0)}
+            defaultSize={100 - (layout.leftSidebarVisible ? Math.max(layout.leftSidebarSize, leftSidebarMinSize) : 0) - ((layout.rightSidebarVisible && hasAnyTabs && !hideExtraPanels) ? Math.max(layout.rightSidebarSize, rightSidebarMinSize) : 0)}
             minSize={30}
           >
             <div className="h-full flex flex-col">
@@ -2513,12 +2523,12 @@ function AppContent() {
               <ResizablePanel
                 id="right-sidebar"
                 order={3}
-                defaultSize={layout.rightSidebarSize}
-                minSize={15}
-                maxSize={30}
+                defaultSize={Math.max(layout.rightSidebarSize, rightSidebarMinSize)}
+                minSize={rightSidebarMinSize}
+                maxSize={35}
               >
-                <Tabs value={rightSidebar.active} onValueChange={rightSidebar.select} className="h-full flex flex-col">
-                  <TabsList className="inline-flex w-auto mx-1 mt-2">
+                <Tabs value={rightSidebar.active} onValueChange={rightSidebar.select} className="h-full min-w-0 flex flex-col bg-sidebar">
+                  <TabsList className="flex w-auto shrink-0 justify-start overflow-x-auto mx-2 mt-2">
                     <TabsTrigger value="monitor" className="text-xs px-2">{t('app.monitor')}</TabsTrigger>
                     <TabsTrigger value="logs" className="text-xs px-2">{t('app.logs')}</TabsTrigger>
                     <TabsTrigger value="commands" className="text-xs px-2">{t('app.quickCommands')}</TabsTrigger>

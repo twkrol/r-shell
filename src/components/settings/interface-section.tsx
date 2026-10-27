@@ -50,8 +50,8 @@ export function InterfaceSection({
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="gap-4 rounded-lg shadow-none">
+      <CardHeader className="px-4 pt-4">
         <CardTitle className="flex items-center gap-2">
           <Palette className="h-4 w-4" />
           {t('settings.interface.title')}
@@ -60,12 +60,12 @@ export function InterfaceSection({
           {t('settings.interface.desc')}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 px-4 last:pb-4">
         {show('settings.interface.appTheme', 'theme dark light auto appearance') && (
           <div className="space-y-2">
             <Label>{t('settings.interface.appTheme')}</Label>
             <Select value={theme} onValueChange={onThemeChange}>
-              <SelectTrigger>
+              <SelectTrigger aria-label={t('settings.interface.appTheme')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -83,7 +83,7 @@ export function InterfaceSection({
           <div className="space-y-2">
             <Label>{t('settings.language.label')}</Label>
             <Select value={languagePref} onValueChange={onLanguageChange}>
-              <SelectTrigger>
+              <SelectTrigger aria-label={t('settings.language.label')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -99,14 +99,14 @@ export function InterfaceSection({
         <Separator />
 
         {show('settings.interface.autostart', 'launch login startup autostart') && (
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div className="space-y-0.5">
               <Label>{t('settings.interface.autostart')}</Label>
               <p className="text-sm text-muted-foreground">
                 {t('settings.interface.autostartDesc')}
               </p>
             </div>
-            <Switch checked={autostart} onCheckedChange={onAutostartChange} />
+            <Switch aria-label={t('settings.interface.autostart')} checked={autostart} onCheckedChange={onAutostartChange} />
           </div>
         )}
       </CardContent>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="r-shell-logo-title r-shell-logo-description">
+  <title id="r-shell-logo-title">R-Shell</title>
+  <desc id="r-shell-logo-description">A teal R shaped like a terminal prompt, paired with a light cursor on a rounded graphite tile.</desc>
+  <defs>
+    <linearGradient id="r-shell-surface" x1="64" y1="32" x2="448" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#243239"/>
+      <stop offset="1" stop-color="#14181D"/>
+    </linearGradient>
+  </defs>
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#r-shell-surface)"/>
+  <rect x="25" y="25" width="462" height="462" rx="111" stroke="#3D5058" stroke-opacity=".65" stroke-width="2"/>
+  <g stroke="#68D8C5" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M136 352V160H212L288 220L212 280H136"/>
+    <path d="M212 280L284 352"/>
+  </g>
+  <path d="M340 352H380" stroke="#E3EEEC" stroke-width="36" stroke-linecap="round"/>
+</svg>

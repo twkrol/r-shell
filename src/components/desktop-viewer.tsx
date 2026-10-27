@@ -15,6 +15,8 @@ interface DesktopViewerProps {
   connectionName: string;
   host?: string;
   protocol?: string;
+  /** Saved remote resolution; only fit mode changes the server's desktop size. */
+  rdpResolution?: string;
   isConnected: boolean;
   onReconnect?: () => void;
   /** Fired after a successful explicit disconnect so the parent can flip
@@ -27,6 +29,7 @@ export function DesktopViewer({
   connectionName,
   host,
   protocol = 'RDP',
+  rdpResolution = 'fit',
   isConnected,
   onReconnect,
   onDisconnected,
@@ -112,7 +115,7 @@ export function DesktopViewer({
     });
     observer.observe(container);
     return () => observer.disconnect();
-  }, [isConnected, sessionMissing]);
+  }, [isConnected, sessionMissing, isPoppedOut]);
 
   // WebSocket connection for receiving frame updates and clipboard data from remote
   useEffect(() => {
@@ -323,7 +326,8 @@ export function DesktopViewer({
 
   // For RDP sessions: debounce container resize and notify the remote host
   useEffect(() => {
-    if (!isConnected || protocol?.toUpperCase() !== 'RDP') return;
+    if (!isConnected || sessionMissing || isPoppedOut || protocol?.toUpperCase() !== 'RDP') return;
+    if (rdpResolution !== 'fit') return;
     if (scalingMode !== 'fit') return;
     if (containerSize.width === 0 || containerSize.height === 0) return;
 
@@ -342,7 +346,7 @@ export function DesktopViewer({
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timer);
-  }, [connectionId, isConnected, protocol, scalingMode, containerSize.width, containerSize.height]);
+  }, [connectionId, isConnected, sessionMissing, isPoppedOut, protocol, rdpResolution, scalingMode, containerSize.width, containerSize.height]);
 
   const scale = scalingMode === 'fit'
     ? computeFitScale(desktopWidth, desktopHeight, containerSize.width, containerSize.height)
@@ -495,11 +499,11 @@ export function DesktopViewer({
     } else {
       document.exitFullscreen?.().catch(() => {});
     }
-  }, [isFullScreen]);
+  }, [isFullScreen, t]);
 
   useEffect(() => {
     const handleFullScreenChange = () => {
-      setIsFullScreen(!!document.fullscreenElement);
+      setIsFullScreen(document.fullscreenElement === containerRef.current && document.fullscreenElement !== null);
     };
     document.addEventListener('fullscreenchange', handleFullScreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullScreenChange);
@@ -567,7 +571,7 @@ export function DesktopViewer({
   if (!isConnected || sessionMissing) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-muted/30">
-        <div className="text-center space-y-4">
+        <div className="min-w-0 max-w-xl p-6 break-words text-center space-y-4">
           <Monitor className="h-12 w-12 mx-auto text-muted-foreground/50" />
           <div>
             <p className="text-lg font-medium text-muted-foreground">
@@ -593,7 +597,7 @@ export function DesktopViewer({
   if (protocol?.toUpperCase() === 'RDP' && isPoppedOut) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-muted/30">
-        <div className="text-center space-y-4">
+        <div className="min-w-0 max-w-xl p-6 break-words text-center space-y-4">
           <ExternalLink className="h-12 w-12 mx-auto text-primary/70" />
           <div>
             <p className="text-lg font-medium">
@@ -603,7 +607,7 @@ export function DesktopViewer({
               {connectionName} ({host})
             </p>
           </div>
-          <div className="flex gap-2 justify-center">
+          <div className="flex flex-wrap gap-2 justify-center">
             <Button variant="outline" onClick={handleFocusWindow}>
               <ExternalLink className="h-4 w-4 mr-2" />
               {t('desktopViewer.focusWindow')}

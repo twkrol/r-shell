@@ -14,7 +14,7 @@ use ironrdp_graphics::image_processing::PixelFormat;
 use ironrdp_session::image::DecodedImage;
 use ironrdp_session::{ActiveStage, ActiveStageOutput};
 use ironrdp_tokio::FramedWrite;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -35,6 +35,60 @@ pub(super) struct SessionState {
     pub(super) connection_result: ConnectionResult,
     pub(super) input_rx: mpsc::UnboundedReceiver<InputCommand>,
     pub(super) enable_server_pointer: bool,
+}
+
+/// Keep the latest size through channel negotiation and server activation.
+/// Windows can accept a layout PDU during logon without applying it. Encoding
+/// is not an acknowledgement: retry a few times until reactivation confirms it.
+#[derive(Default)]
+struct PendingResize {
+    target: Option<(u32, u32)>,
+    retry_at: Option<Instant>,
+    attempts: u8,
+}
+
+impl PendingResize {
+    const RETRY_DELAY: Duration = Duration::from_secs(2);
+    const MAX_ATTEMPTS: u8 = 4;
+
+    fn request(&mut self, width: u16, height: u16) {
+        self.target = Some(ironrdp_displaycontrol::pdu::MonitorLayoutEntry::adjust_display_size(
+            u32::from(width),
+            u32::from(height),
+        ));
+        self.retry_at = None;
+        self.attempts = 0;
+    }
+
+    fn acknowledge(&mut self, width: u16, height: u16) {
+        if self.target == Some((u32::from(width), u32::from(height))) {
+            *self = Self::default();
+        }
+    }
+
+    fn encode<T, E>(
+        &mut self,
+        now: Instant,
+        encode: impl FnOnce(u32, u32) -> Option<Result<T, E>>,
+    ) -> Option<Result<T, E>> {
+        let (width, height) = self.target?;
+        if self.retry_at.is_some_and(|deadline| now < deadline) {
+            return None;
+        }
+        // None means capabilities are still missing (or unsupported). Wait for
+        // another server PDU rather than arming a timer for an absent channel.
+        let Some(result) = encode(width, height) else {
+            self.retry_at = None;
+            return None;
+        };
+        self.attempts += 1;
+        if result.is_err() || self.attempts >= Self::MAX_ATTEMPTS {
+            *self = Self::default();
+        } else {
+            self.retry_at = Some(now + Self::RETRY_DELAY);
+        }
+        Some(result)
+    }
 }
 
 /// The actual ironrdp session loop — runs on a dedicated OS thread with a
@@ -116,7 +170,9 @@ pub(super) async fn rdp_session_loop(
     // ── Main session loop ───────────────────────────────────────────
     let mut consecutive_errors = 0;
     let mut loop_iter: u64 = 0;
+    let mut pending_resize = PendingResize::default();
     loop {
+        let resize_retry_at = pending_resize.retry_at;
         loop_iter += 1;
         if loop_iter % 50 == 1 {
             tracing::info!("RDP session loop iteration {}", loop_iter);
@@ -194,19 +250,9 @@ pub(super) async fn rdp_session_loop(
                 tracing::info!("RDP input arm: {:?}", std::mem::discriminant(&cmd));
                 match cmd {
                     InputCommand::Resize { width, height } => {
-                        use ironrdp_displaycontrol::pdu::MonitorLayoutEntry;
-                        let (w, h) = MonitorLayoutEntry::adjust_display_size(width as u32, height as u32);
-                        match active_stage.encode_resize(w, h, None, None) {
-                            Some(Ok(frame)) => vec![ActiveStageOutput::ResponseFrame(frame)],
-                            Some(Err(e)) => {
-                                tracing::warn!("RDP encode_resize error: {:?}", e);
-                                Vec::new()
-                            }
-                            None => {
-                                tracing::info!("RDP resize: Display Control unavailable, client-side scaling");
-                                Vec::new()
-                            }
-                        }
+                        tracing::info!("RDP resize requested: {}x{}", width, height);
+                        pending_resize.request(width, height);
+                        Vec::new()
                     }
                     // Frontend requested a full refresh (frame-stream health
                     // watchdog): push the whole current picture through the
@@ -276,6 +322,15 @@ pub(super) async fn rdp_session_loop(
                     }
                 }
             }
+
+            // A quiet desktop must still retry a layout ignored during logon.
+            // There is no timer until a supported channel encoded a request.
+            _ = async {
+                match resize_retry_at {
+                    Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
+                    None => std::future::pending::<()>().await,
+                }
+            } => Vec::new(),
 
             // Diagnostics: heartbeat proving the select! loop is alive.
             _ = tokio::time::sleep(Duration::from_secs(3)) => {
@@ -447,6 +502,7 @@ pub(super) async fn rdp_session_loop(
                         }
                         Ok(Some((w, h, share_id))) => {
                             tracing::info!("RDP reactivation done: {}x{} share_id={}", w, h, share_id);
+                            pending_resize.acknowledge(w, h);
                             route.share_id = share_id;
                             image = DecodedImage::new(PixelFormat::RgbA32, w, h);
                             // The framebuffer now truly has this size — publish
@@ -494,10 +550,132 @@ pub(super) async fn rdp_session_loop(
                 _ => {}
             }
         }
+
+        // Retain the latest size until acknowledged, with bounded retries for
+        // Windows ignoring a layout during startup despite ready capabilities.
+        if let Some(result) = pending_resize.encode(Instant::now(), |w, h| {
+            let result = active_stage.encode_resize(w, h, None, None);
+            if matches!(result, Some(Ok(_))) {
+                tracing::info!("RDP resize sent: {}x{}", w, h);
+            }
+            result
+        }) {
+            match result {
+                Ok(frame) => framed.write_all(&frame).await?,
+                Err(e) => tracing::warn!("RDP encode_resize error: {:?}", e),
+            }
+        }
     }
 
     tracing::info!("RDP session loop exited");
     Ok(())
+}
+
+#[cfg(test)]
+mod resize_tests {
+    use super::{Instant, PendingResize};
+
+    fn encoded(width: u32, height: u32) -> Option<Result<(u32, u32), &'static str>> {
+        Some(Ok((width, height)))
+    }
+
+    #[test]
+    fn initial_resize_survives_delayed_display_control_negotiation() {
+        let mut resize = PendingResize::default();
+        let now = Instant::now();
+        resize.request(1600, 900);
+        for _ in 0..3 {
+            assert_eq!(resize.encode(now, |_, _| None::<Result<(), ()>>), None);
+            assert!(resize.retry_at.is_none(), "unsupported channels must not arm retries");
+        }
+        assert_eq!(resize.encode(now, encoded), Some(Ok((1600, 900))));
+        resize.acknowledge(1600, 900);
+        assert!(resize.target.is_none());
+        assert!(resize.retry_at.is_none());
+    }
+
+    #[test]
+    fn ignored_startup_resize_retries_until_acknowledged() {
+        let mut resize = PendingResize::default();
+        let now = Instant::now();
+        resize.request(4092, 2580);
+        assert_eq!(resize.encode(now, encoded), Some(Ok((4092, 2580))));
+        assert_eq!(resize.encode(now, encoded), None, "do not resend on each frame");
+        let retry = now + PendingResize::RETRY_DELAY;
+        assert_eq!(resize.encode(retry, encoded), Some(Ok((4092, 2580))));
+        resize.acknowledge(4092, 2580);
+        assert_eq!(resize.encode(retry + PendingResize::RETRY_DELAY, encoded), None);
+    }
+
+    #[test]
+    fn unacknowledged_resizes_have_a_bounded_retry_budget() {
+        let mut resize = PendingResize::default();
+        let now = Instant::now();
+        resize.request(1600, 900);
+        for attempt in 0..PendingResize::MAX_ATTEMPTS {
+            let time = now + PendingResize::RETRY_DELAY * u32::from(attempt);
+            assert_eq!(resize.encode(time, encoded), Some(Ok((1600, 900))));
+        }
+        assert!(resize.target.is_none());
+        assert!(resize.retry_at.is_none());
+        assert_eq!(resize.encode(now + PendingResize::RETRY_DELAY * 10, encoded), None);
+    }
+
+    #[test]
+    fn unavailable_channel_disarms_an_elapsed_retry_timer() {
+        let mut resize = PendingResize::default();
+        let now = Instant::now();
+        resize.request(1600, 900);
+        assert_eq!(resize.encode(now, encoded), Some(Ok((1600, 900))));
+        assert_eq!(resize.encode(now + PendingResize::RETRY_DELAY, |_, _| None::<Result<(), ()>>), None);
+        assert!(resize.retry_at.is_none());
+        assert_eq!(resize.target, Some((1600, 900)));
+    }
+
+    #[test]
+    fn fullscreen_round_trip_replaces_inflight_size_and_ignores_stale_ack() {
+        let mut resize = PendingResize::default();
+        let now = Instant::now();
+        resize.request(1600, 900);
+        resize.request(2560, 1440);
+        assert_eq!(resize.encode(now, encoded), Some(Ok((2560, 1440))));
+        resize.request(1600, 900);
+        resize.acknowledge(2560, 1440);
+        assert_eq!(resize.encode(now, encoded), Some(Ok((1600, 900))));
+        resize.acknowledge(1600, 900);
+        assert!(resize.retry_at.is_none());
+    }
+
+    #[test]
+    fn ready_channel_encodes_both_fullscreen_and_restored_window_sizes() {
+        let mut resize = PendingResize::default();
+        let now = Instant::now();
+        for (width, height) in [(1600, 900), (2560, 1440), (1600, 900)] {
+            resize.request(width, height);
+            assert_eq!(resize.encode(now, encoded), Some(Ok((u32::from(width), u32::from(height)))));
+            resize.acknowledge(width, height);
+            assert!(resize.target.is_none());
+        }
+    }
+
+    #[test]
+    fn encoding_errors_do_not_repeat_on_every_server_frame() {
+        let mut resize = PendingResize::default();
+        let now = Instant::now();
+        resize.request(1600, 900);
+        assert_eq!(resize.encode(now, |_, _| Some(Err::<(), _>("rejected"))), Some(Err("rejected")));
+        assert_eq!(resize.encode(now, encoded), None);
+        assert!(resize.retry_at.is_none());
+    }
+
+    #[test]
+    fn acknowledgement_uses_the_protocol_adjusted_dimensions() {
+        let mut resize = PendingResize::default();
+        resize.request(1601, 100);
+        assert_eq!(resize.encode(Instant::now(), encoded), Some(Ok((1600, 200))));
+        resize.acknowledge(1600, 200);
+        assert!(resize.target.is_none());
+    }
 }
 
 /// Compact a rect of `image` into a tight `FrameUpdate`. `DecodedImage::

@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="src/assets/r-shell-logo.svg" alt="R-Shell logo" width="128" height="128">
+
 # R-Shell — Lightweight SSH Client for macOS, Windows & Linux
 
 [![GitHub license](https://img.shields.io/github/license/GOODBOY008/r-shell)](https://github.com/GOODBOY008/r-shell/blob/main/LICENSE)
@@ -186,11 +188,7 @@ R-Shell combines an interactive terminal, dual-panel file manager, remote deskto
 
 > Layout shortcuts are registered at the OS level but ignored while terminal input is focused, so terminal-native bindings (e.g. tmux `Ctrl+B`) still reach the shell.
 
-Every shortcut can be remapped in **Settings → Keyboard**:
-
-<div align="center">
-  <img src="screenshots/settings-shortcuts.png" alt="R-Shell settings with the keyboard shortcut editor" width="100%">
-</div>
+Every shortcut can be remapped in **Settings → Keyboard**.
 
 ### 🔧 Additional Features
 

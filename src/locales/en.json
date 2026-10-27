@@ -542,7 +542,20 @@
       "hours_other": "{{count}} hours ago",
       "days_one": "{{count}} day ago",
       "days_other": "{{count}} days ago"
-    }
+    },
+    "workspace": "Workspace",
+    "workspaceEyebrow": "Ready when you are",
+    "headline": "Your servers.",
+    "headlineAccent": "One workspace.",
+    "workspaceDescription": "Connect to your machines, manage files, and keep an eye on everything. Pick up where you left off.",
+    "browseConnections": "Browse connections",
+    "noRecentTitle": "Your next session starts here",
+    "noRecentDescription": "Connect to a server and it will appear here for quick access next time.",
+    "resumeHint": "Select a recent connection to open a new session.",
+    "quickAccess": "Quick access",
+    "workflowTitle": "A little less switching.",
+    "workflowDescription": "Terminals, remote files, RDP and VNC desktops, and system monitoring in one connected workspace.",
+    "makeItYours": "Make it yours"
   },
   "menuBar": {
     "file": "File",
@@ -720,6 +733,7 @@
       "downloadedFilesSkippedFolders": "Downloaded {{count}} files, skipped {{folders}} folder(s)"
     },
     "toolbar": {
+      "editPath": "Edit path",
       "back": "Back",
       "forward": "Forward",
       "parentDir": "Parent directory",
@@ -1000,7 +1014,12 @@
     "failedToReorder": "Failed to reorder items",
     "detachedSessions": "Detached Sessions",
     "reattachSession": "Reattach Session",
-    "closeDetachedSession": "Close Session"
+    "closeDetachedSession": "Close Session",
+    "noSearchResults": "No matching connections",
+    "searchHint": "Try a different name, host, or username.",
+    "clearSearch": "Clear search",
+    "expandFolder": "Expand {{name}}",
+    "collapseFolder": "Collapse {{name}}"
   },
   "filePanel": {
     "selectDirectory": "Select a directory to view its contents",
@@ -1112,7 +1131,9 @@
     "uptime": "Uptime: {{time}}",
     "cpu": "CPU: {{percent}}%",
     "memory": "Memory: {{used}}/{{total}}",
-    "ready": "Ready"
+    "ready": "Ready",
+    "pending": "Waiting to connect",
+    "workspace": "Workspace"
   },
   "notifications": {
     "center": "Notifications",
@@ -1179,6 +1200,8 @@
     "lastConnected": "Last Connected"
   },
   "desktopToolbar": {
+    "controls": "Remote desktop controls",
+    "showControls": "Show remote desktop controls",
     "switchTo11": "Switch to 1:1",
     "switchToFit": "Switch to Fit to Window",
     "fit": "Fit",
@@ -1301,6 +1324,10 @@
     "gpuIndex": "GPU {{index}}"
   },
   "logMonitor": {
+    "clearSearch": "Clear search",
+    "lineLimit": "Number of log lines",
+    "refreshInterval": "Refresh interval",
+    "invalidRegex": "Invalid regular expression. Check the pattern or turn off regex search.",
     "noSourcesDiscovered": "No log sources discovered",
     "failedToDiscoverSources": "Failed to discover log sources",
     "failedToLoadLog": "Failed to load log",
