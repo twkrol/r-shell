@@ -319,15 +319,21 @@ export function ConnectionDialog({
       // pre-filled values a new connection gets.
       if (editingConnection) {
         // Remember the stored (sealed) secrets so a blank field on save means
-        // "keep the stored one". The form itself never shows them.
+        // "keep the stored one". The form itself never shows them. Read them
+        // from storage, not from the record handed in: after a failed connect
+        // App passes a record decrypted for the request (#283), and "keeping"
+        // that plaintext would get it stripped on save, deleting the secret.
+        const stored =
+          (editingConnection.id ? ConnectionStorageManager.getConnection(editingConnection.id) : undefined) ??
+          editingConnection;
         setPreviousSecrets({
-          password: editingConnection.password ?? '',
-          passphrase: editingConnection.passphrase ?? '',
-          proxyPassword: editingConnection.proxyPassword ?? '',
-          vncPassword: editingConnection.vncPassword ?? '',
-          tunnelPassword: editingConnection.tunnelPassword ?? '',
-          tunnelPassphrase: editingConnection.tunnelPassphrase ?? '',
-          sudoPassword: editingConnection.sudoPassword ?? '',
+          password: stored.password ?? '',
+          passphrase: stored.passphrase ?? '',
+          proxyPassword: stored.proxyPassword ?? '',
+          vncPassword: stored.vncPassword ?? '',
+          tunnelPassword: stored.tunnelPassword ?? '',
+          tunnelPassphrase: stored.tunnelPassphrase ?? '',
+          sudoPassword: stored.sudoPassword ?? '',
         });
         setRemovedSecrets([]);
         const merged = mergeWithDefaults(defaultConfig, editingConnection);
