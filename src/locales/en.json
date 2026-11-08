@@ -445,7 +445,9 @@
       "importPassphraseWrong": "Wrong passphrase or damaged credentials. Try again or skip the credentials.",
       "importWithoutCredentials": "Skip credentials",
       "importCredentialsRestored_one": "Credentials restored for {{count}} connection.",
-      "importCredentialsRestored_other": "Credentials restored for {{count}} connections."
+      "importCredentialsRestored_other": "Credentials restored for {{count}} connections.",
+      "importCredentialsSkipped_one": "Credentials not restored for {{count}} connection: its details in the file differ from the exported ones.",
+      "importCredentialsSkipped_other": "Credentials not restored for {{count}} connections: their details in the file differ from the exported ones."
     },
     "language": {
       "label": "Language",

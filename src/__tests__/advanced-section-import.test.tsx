@@ -21,7 +21,7 @@ vi.mock('../lib/notifications', () => ({
 }));
 
 const imported: ImportResult = {
-  connections: 2, profiles: 0, credentials: 0,
+  connections: 2, profiles: 0, credentials: 0, credentialsSkipped: 0,
   terminalAppearance: false, editorConfig: false, appSettings: false, language: false,
 };
 
@@ -89,5 +89,18 @@ describe('encrypted credential import prompt', () => {
     await waitFor(() => expect(notify.success).toHaveBeenCalledWith(
       'Configuration imported successfully', { description: expect.stringContaining(summary) },
     ));
+  });
+
+  it('says when credentials were not restored because the file changed', async () => {
+    vi.mocked(applyConfigBundle).mockResolvedValue({ ...imported, credentialsSkipped: 1 });
+    renderImport();
+    const dialog = await screen.findByRole('dialog', { name: 'Encrypted credentials' });
+    fireEvent.change(within(dialog).getByLabelText('Export passphrase'), { target: { value: 'passphrase' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import Config' }));
+    await waitFor(() => expect(notify.success).toHaveBeenCalledWith('Configuration imported successfully', {
+      description: expect.stringContaining(
+        'Credentials not restored for 1 connection: its details in the file differ from the exported ones.',
+      ),
+    }));
   });
 });

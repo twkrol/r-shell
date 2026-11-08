@@ -687,7 +687,67 @@ describe('credentials block', () => {
     expect(text).not.toContain('hunter2');
     expect(text).not.toContain(sealedPassword);
     const payload = JSON.parse(decodeURIComponent(atob(bundle.data.credentials.sealed.split(':')[3])));
-    expect(payload.connections['conn-sealed']).toEqual({ password: 'hunter2', tunnelPassword: 'bastion-pw' });
+    expect(payload.connections['conn-sealed']).toEqual({
+      password: 'hunter2',
+      tunnelPassword: 'bastion-pw',
+      record: bundle.data.connections.connections.find((c: ConnectionData) => c.id === 'conn-sealed'),
+    });
+    expect(payload.connections['conn-sealed'].record.password).toBeUndefined();
+  });
+
+  it.each([
+    ['host', (c: Record<string, unknown>) => { c.host = 'evil.example.test'; }],
+    ['port', (c: Record<string, unknown>) => { c.port = 2222; }],
+    ['proxy', (c: Record<string, unknown>) => { c.proxyType = 'socks5'; c.proxyHost = 'evil.example.test'; c.proxyPort = 1080; }],
+    ['jump route', (c: Record<string, unknown>) => {
+      c.jumpHosts = [{ host: 'evil.example.test', port: 22, username: 'root', authMethod: 'password' }];
+    }],
+  ])('does not restore credentials to a connection whose %s changed in the file', async (_changed, tamper) => {
+    const bundle = JSON.parse(await exportWithPassphrase('correct horse'));
+    tamper(bundle.data.connections.connections.find((c: ConnectionData) => c.id === 'conn-sealed'));
+
+    const { applyConfigBundle } = await import('../lib/config-export-import');
+    const result = await applyConfigBundle(bundle, { credentialsPassphrase: 'correct horse' });
+
+    expect(result.credentials).toBe(0);
+    expect(result.credentialsSkipped).toBe(1);
+    const imported = ConnectionStorageManager.getConnections().find((c) => c.name === 'Sealed Server')!;
+    expect(imported.password).toBeUndefined();
+    expect(imported.tunnelPassword).toBeUndefined();
+  });
+
+  it('does not restore credentials to a duplicated connection id', async () => {
+    const bundle = JSON.parse(await exportWithPassphrase('correct horse'));
+    const connections = bundle.data.connections.connections as ConnectionData[];
+    const genuine = connections.find((c) => c.id === 'conn-sealed')!;
+    // The genuine entry still matches its record; the copy shares its id.
+    connections.push({ ...genuine, name: 'Copy', host: 'evil.example.test' });
+
+    const { applyConfigBundle } = await import('../lib/config-export-import');
+    const result = await applyConfigBundle(bundle, { credentialsPassphrase: 'correct horse' });
+
+    expect(result.credentials).toBe(0);
+    expect(result.credentialsSkipped).toBe(2);
+    for (const name of ['Sealed Server', 'Copy']) {
+      const imported = ConnectionStorageManager.getConnections().find((c) => c.name === name)!;
+      expect(imported.password).toBeUndefined();
+      expect(imported.tunnelPassword).toBeUndefined();
+    }
+  });
+
+  it('rejects hop secrets that do not line up with the exported route', async () => {
+    const bundle = JSON.parse(await exportWithPassphrase('correct horse'));
+    const crypto = mockInvoke.getMockImplementation()!;
+    const record = bundle.data.connections.connections.find((c: ConnectionData) => c.id === 'conn-sealed');
+    mockInvoke.mockImplementation(async (command: unknown, args: unknown) =>
+      command === 'backup_open'
+        ? JSON.stringify({ connections: { 'conn-sealed': { record, jumpHosts: [{ password: 'hop' }] } } })
+        : crypto(command, args));
+    const before = { ...localStorage };
+    const { applyConfigBundle, WrongPassphraseError } = await import('../lib/config-export-import');
+    await expect(applyConfigBundle(bundle, { credentialsPassphrase: 'correct horse' }))
+      .rejects.toBeInstanceOf(WrongPassphraseError);
+    expect({ ...localStorage }).toEqual(before);
   });
 
   it('restores the secrets sealed for this machine when the passphrase is right', async () => {
@@ -904,17 +964,23 @@ describe('credentials block', () => {
       const bundle = JSON.parse(await exportWithPassphrase('correct horse'));
       const connections = bundle.data.connections.connections as ConnectionData[];
       const connection = connections.find((c) => c.id === 'conn-sealed')!;
+      // Injected secret fields are stripped, so conn-sealed still matches its
+      // exported record and keeps its restored credentials.
       connection.password = 'v1:foreign:password';
       connection.passphrase = 'untrusted plaintext';
-      connection.jumpHosts = [{
-        host: 'jump.example.test',
-        port: 22,
-        username: 'jump',
-        authMethod: 'password',
-        password: 'v1:foreign:jump-password',
-        passphrase: 'untrusted jump passphrase',
-      }];
-      connections.push({ ...connection, id: 'conn-untrusted', name: 'Untrusted credentials' });
+      connections.push({
+        ...connection,
+        id: 'conn-untrusted',
+        name: 'Untrusted credentials',
+        jumpHosts: [{
+          host: 'jump.example.test',
+          port: 22,
+          username: 'jump',
+          authMethod: 'password',
+          password: 'v1:foreign:jump-password',
+          passphrase: 'untrusted jump passphrase',
+        }],
+      });
       mockOpen.mockResolvedValue('/tmp/config.json');
       mockReadTextFile.mockResolvedValue(JSON.stringify(bundle));
 
@@ -929,12 +995,11 @@ describe('credentials block', () => {
       const untrusted = imported.find((c) => c.name === 'Untrusted credentials')!;
       expect(untrusted.password).toBeUndefined();
       expect(untrusted.tunnelPassword).toBeUndefined();
-      for (const saved of [restored, untrusted]) {
-        expect(saved.passphrase).toBeUndefined();
-        expect(saved.jumpHosts?.[0].host).toBe('jump.example.test');
-        expect(saved.jumpHosts?.[0].password).toBeUndefined();
-        expect(saved.jumpHosts?.[0].passphrase).toBeUndefined();
-      }
+      expect(restored.passphrase).toBeUndefined();
+      expect(untrusted.passphrase).toBeUndefined();
+      expect(untrusted.jumpHosts?.[0].host).toBe('jump.example.test');
+      expect(untrusted.jumpHosts?.[0].password).toBeUndefined();
+      expect(untrusted.jumpHosts?.[0].passphrase).toBeUndefined();
     },
   );
 

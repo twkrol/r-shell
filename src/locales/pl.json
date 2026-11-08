@@ -449,7 +449,11 @@
       "importCredentialsRestored_one": "Przywrócono poświadczenia: {{count}} połączenie.",
       "importCredentialsRestored_few": "Przywrócono poświadczenia: {{count}} połączenia.",
       "importCredentialsRestored_many": "Przywrócono poświadczenia: {{count}} połączeń.",
-      "importCredentialsRestored_other": "Przywrócono poświadczenia: {{count}} połączenia."
+      "importCredentialsRestored_other": "Przywrócono poświadczenia: {{count}} połączenia.",
+      "importCredentialsSkipped_one": "Nie przywrócono poświadczeń: {{count}} połączenie, bo jego dane w pliku różnią się od wyeksportowanych.",
+      "importCredentialsSkipped_few": "Nie przywrócono poświadczeń: {{count}} połączenia, bo ich dane w pliku różnią się od wyeksportowanych.",
+      "importCredentialsSkipped_many": "Nie przywrócono poświadczeń: {{count}} połączeń, bo ich dane w pliku różnią się od wyeksportowanych.",
+      "importCredentialsSkipped_other": "Nie przywrócono poświadczeń: {{count}} połączenia, bo ich dane w pliku różnią się od wyeksportowanych."
     },
     "language": {
       "label": "Język",

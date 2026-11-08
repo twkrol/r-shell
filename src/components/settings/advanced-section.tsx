@@ -170,6 +170,9 @@ export function AdvancedSection({
       if (result.credentials > 0) {
         summary.push(t('settings.advanced.importCredentialsRestored', { count: result.credentials }));
       }
+      if (result.credentialsSkipped > 0) {
+        summary.push(t('settings.advanced.importCredentialsSkipped', { count: result.credentialsSkipped }));
+      }
       notify.success(t('settings.advanced.importSuccess'), { description: summary.join(' ') });
       onConfigImported();
     } catch (error) {

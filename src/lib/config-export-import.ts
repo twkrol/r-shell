@@ -76,9 +76,16 @@ export interface ConfigBundle {
   };
 }
 
+/**
+ * One connection's entry in the credentials block. `record` is the public
+ * connection as exported: the rest of the file is not authenticated, so the
+ * secrets go back only to a connection that still matches it.
+ */
+type BackupEntry = ConnectionSecrets & { record?: Record<string, unknown> };
+
 /** Plaintext layout of the credentials block. */
 interface CredentialsBlock {
-  connections: Record<string, ConnectionSecrets>;
+  connections: Record<string, BackupEntry>;
 }
 
 export interface ExportOptions {
@@ -91,6 +98,8 @@ export interface ImportResult {
   profiles: number;
   /** Connections whose secrets were restored from the credentials block. */
   credentials: number;
+  /** Connections whose secrets were not restored: their record in the file changed. */
+  credentialsSkipped: number;
   terminalAppearance: boolean;
   editorConfig: boolean;
   appSettings: boolean;
@@ -210,7 +219,9 @@ export async function exportAllConfig(options: ExportOptions = {}): Promise<bool
         if (hops.some((hop) => Object.keys(hop).length > 0)) {
           own.jumpHosts = hops;
         }
-        if (Object.keys(own).length > 0) secrets[connection.id] = own;
+        if (Object.keys(own).length > 0) {
+          secrets[connection.id] = { ...own, record: withoutSecrets(connection) as unknown as Record<string, unknown> };
+        }
       }
       if (Object.keys(secrets).length > 0) {
         const block: CredentialsBlock = { connections: secrets };
@@ -303,9 +314,15 @@ function parseCredentialsBlock(json: string): CredentialsBlock {
   if (!isRecord(value) || !isRecord(value.connections)) throw new WrongPassphraseError();
   return {
     connections: Object.fromEntries(Object.entries(value.connections).map(([id, entry]) => {
-      const secrets: ConnectionSecrets = parseSecretValues(entry);
-      if (isRecord(entry) && Object.prototype.hasOwnProperty.call(entry, 'jumpHosts')) {
-        if (!Array.isArray(entry.jumpHosts)) throw new WrongPassphraseError();
+      const secrets: BackupEntry = parseSecretValues(entry);
+      if (!isRecord(entry) || !isRecord(entry.record)) throw new WrongPassphraseError();
+      secrets.record = entry.record;
+      if (Object.prototype.hasOwnProperty.call(entry, 'jumpHosts')) {
+        // Hop secrets line up with the exported route.
+        const route = entry.record.jumpHosts;
+        if (!Array.isArray(entry.jumpHosts) || entry.jumpHosts.length !== (Array.isArray(route) ? route.length : 0)) {
+          throw new WrongPassphraseError();
+        }
         secrets.jumpHosts = entry.jumpHosts.map(parseSecretValues);
       }
       return [id, secrets];
@@ -342,6 +359,7 @@ export async function applyConfigBundle(
       connections: 0,
       profiles: 0,
       credentials: 0,
+      credentialsSkipped: 0,
       terminalAppearance: false,
       editorConfig: false,
       appSettings: false,
@@ -375,15 +393,30 @@ export async function applyConfigBundle(
       const payload = data.connections;
       const locallySealedCredentials = new Map<string, ConnectionSecrets>();
       if (Object.keys(restored).length > 0 && Array.isArray(payload.connections)) {
+        // Secrets reach storage by connection id: a duplicated id would hand
+        // them to every copy, so it restores nothing.
+        const idCount = new Map<unknown, number>();
+        for (const connection of payload.connections) {
+          idCount.set(connection.id, (idCount.get(connection.id) ?? 0) + 1);
+        }
         // Complete key initialization and every seal before writing anything.
         for (const connection of payload.connections) {
           if (!Object.prototype.hasOwnProperty.call(restored, connection.id)) continue;
           const secrets = restored[connection.id];
+          const restoresSecret = hasSecret(secrets) || !!secrets.jumpHosts?.some(hasSecret);
+          // Only the block is authenticated: a changed host, port, user, proxy or
+          // jump route in the file would send the restored secrets elsewhere.
+          // shortcut: compares serialized JSON, so a file re-saved with reordered
+          // keys also skips its credentials; sort keys if that ever matters.
+          if (
+            idCount.get(connection.id) !== 1 ||
+            JSON.stringify(withoutSecrets(connection)) !== JSON.stringify(secrets.record)
+          ) {
+            if (restoresSecret) result.credentialsSkipped += 1;
+            continue;
+          }
           const localSecrets: ConnectionSecrets = await sealBackupSecrets(secrets);
           if (secrets.jumpHosts) {
-            if (secrets.jumpHosts.length !== connection.jumpHosts?.length) {
-              throw new WrongPassphraseError();
-            }
             const hops: SecretValues[] = [];
             for (const hop of secrets.jumpHosts) hops.push(await sealBackupSecrets(hop));
             if (hops.some((hop) => Object.keys(hop).length > 0)) localSecrets.jumpHosts = hops;
@@ -391,7 +424,7 @@ export async function applyConfigBundle(
           if (Object.keys(localSecrets).length > 0) {
             locallySealedCredentials.set(connection.id, localSecrets);
             // Empty fields alone (the dialog stores every blank one) restore nothing.
-            if (hasSecret(localSecrets) || localSecrets.jumpHosts?.some(hasSecret)) result.credentials += 1;
+            if (restoresSecret) result.credentials += 1;
           }
         }
       }
