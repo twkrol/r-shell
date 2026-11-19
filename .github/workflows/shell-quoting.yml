@@ -1,0 +1,48 @@
+name: Shell quoting checks (fork)
+
+# Fork-only helper, not part of upstream. Runs the old and the new remote
+# command lines in real login shells, on GNU, BusyBox and BSD userlands.
+on:
+  push:
+    branches:
+      - 'ci/**'
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install login shells
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fish tcsh zsh
+          fish --version
+          tcsh --version
+
+      - name: What main sends today, per login shell (GNU userland)
+        run: bash .github/fork-ci/repro.sh sh dash bash zsh fish tcsh
+
+      - name: Commands built by the fix, per login shell (GNU userland)
+        run: bash .github/fork-ci/harness.sh sh dash bash zsh fish tcsh
+
+      - name: Same two checks on Alpine (BusyBox userland, sh is ash)
+        run: |
+          docker run --rm -v "$PWD/.github/fork-ci:/w:ro" alpine:3.19 sh -c '
+            apk add --no-cache bash fish tcsh zsh dash >/dev/null &&
+            bash /w/repro.sh sh ash dash bash zsh fish tcsh &&
+            bash /w/harness.sh sh ash dash bash zsh fish tcsh'
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: What main sends today, per login shell (BSD userland)
+        run: bash .github/fork-ci/repro.sh sh dash bash zsh tcsh
+
+      - name: Commands built by the fix, per login shell (BSD userland)
+        run: bash .github/fork-ci/harness.sh sh dash bash zsh tcsh
