@@ -27,8 +27,8 @@ let pullDue = Infinity;
 let retryAt = 0;
 let failures = 0;
 const LAST_SUCCESS = 'rshell-config-sync-last-success';
-// A terminal or a file editor takes session input, not configuration.
-const SESSION_INPUT = '.xterm, .cm-editor';
+// A terminal, a file editor or a remote desktop takes session input, not configuration.
+const SESSION_INPUT = '.xterm, .cm-editor, [data-remote-desktop-input]';
 
 export const getSyncView = (): SyncView => view;
 export const subscribeSync = (listener: () => void): (() => void) => {
@@ -66,7 +66,7 @@ function editing(): boolean {
     && !focused.closest(SESSION_INPUT);
   return inlineEditor || !!document.querySelector('[role="dialog"][data-state="open"]:not([data-config-sync-review]), [role="alertdialog"][data-state="open"]');
 }
-/** Blocks the interface while the stores are replaced. Session input stays usable and keeps its focus. */
+/** Blocks what is on screen while the stores are replaced. Session input stays usable and keeps its focus. */
 function lockInterface(): () => void {
   const locked: HTMLElement[] = [];
   const focused = document.activeElement;
@@ -82,7 +82,9 @@ function lockInterface(): () => void {
   return () => {
     for (const element of locked) element.inert = false;
     // An inert element loses focus and the browser does not give it back.
-    if (focused instanceof HTMLElement && focused.isConnected && document.activeElement === document.body) focused.focus({ preventScroll: true });
+    // A tooltip trigger stays without it: focus would open the tooltip.
+    if (focused instanceof HTMLElement && focused.isConnected && document.activeElement === document.body
+      && !focused.matches('[data-slot="tooltip-trigger"]')) focused.focus({ preventScroll: true });
   };
 }
 function notifyStores(): void {
