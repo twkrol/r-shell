@@ -159,6 +159,29 @@ describe('sync commit coordination', () => {
     await sync.commitSync({}); expect(called('config_sync_commit')).toBe(false);
     input.remove(); await sync.commitSync({}); expect(called('config_sync_ack')).toBe(true);
   });
+  it('keeps terminals and file editors usable while it replaces the stores', async () => {
+    document.getElementById('root')!.innerHTML = '<aside><button id="row"></button></aside>'
+      + '<main><nav></nav><section><form></form><div class="xterm"><textarea></textarea></div></section><div class="cm-editor"></div></main>';
+    const at = (selector: string) => document.querySelector<HTMLElement>(selector)!;
+    const inert = () => ['#root', 'aside', 'main', 'nav', 'section', 'form', '.xterm', '.cm-editor'].filter(selector => at(selector).inert);
+    const defaultInvoke = invoke.getMockImplementation()!;
+    let locked: string[] = []; let blur = false;
+    invoke.mockImplementation(async (command, args) => {
+      if (command === 'config_sync_stage_apply') {
+        locked = inert();
+        if (blur) (document.activeElement as HTMLElement).blur(); // What a browser does to focus inside an inert element.
+      }
+      return defaultInvoke(command, args);
+    });
+    const sync = await controller(); await sync.prepareSync(true);
+    at('textarea').focus(); await sync.commitSync({});
+    expect(locked).toEqual(['aside', 'nav', 'form']);
+    expect(inert()).toEqual([]); expect(document.activeElement).toBe(at('textarea'));
+    // Focus on a blocked element comes back when the block ends.
+    blur = true; await sync.prepareSync(true); at('#row').focus(); await sync.commitSync({});
+    expect(invoke.mock.calls.filter(args => args[0] === 'config_sync_ack')).toHaveLength(2);
+    expect(inert()).toEqual([]); expect(document.activeElement).toBe(at('#row'));
+  });
   it('does not shorten a server rate-limit delay on focus', async () => {
     vi.useFakeTimers(); const defaultInvoke = invoke.getMockImplementation()!; let requests = 0;
     invoke.mockImplementation(async (command, args) => {
