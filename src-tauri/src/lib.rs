@@ -584,7 +584,6 @@ pub fn run() {
             commands::copy_file,
             commands::detect_gpu,
             commands::get_gpu_stats,
-            commands::get_websocket_port,
             commands::get_websocket_endpoint,
             local_shell::local_shell_start,
             local_shell::local_shell_close,

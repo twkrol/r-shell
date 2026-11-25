@@ -63,7 +63,6 @@ fn main() {
             "get_system_stats",
             "get_update_context",
             "get_websocket_endpoint",
-            "get_websocket_port",
             "has_detached_session",
             "kill_process",
             "list_connections",

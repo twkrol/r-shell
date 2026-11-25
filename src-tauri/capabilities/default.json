@@ -52,7 +52,6 @@
     "allow-get-system-stats",
     "allow-get-update-context",
     "allow-get-websocket-endpoint",
-    "allow-get-websocket-port",
     "allow-has-detached-session",
     "allow-kill-process",
     "allow-list-connections",

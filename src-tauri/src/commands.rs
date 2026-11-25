@@ -2702,21 +2702,7 @@ done
     })
 }
 
-// ========== WebSocket Port ==========
-
-/// Get the dynamically assigned WebSocket port for PTY terminal connections
-#[tauri::command]
-pub async fn get_websocket_port() -> Result<u16, String> {
-    use crate::WEBSOCKET_PORT;
-    use std::sync::atomic::Ordering;
-
-    let port = WEBSOCKET_PORT.load(Ordering::SeqCst);
-    if port == 0 {
-        Err("WebSocket server not yet started".to_string())
-    } else {
-        Ok(port)
-    }
-}
+// ========== WebSocket Endpoint ==========
 
 /// What the webview needs to open the PTY bridge: the bound port and the
 /// per-launch token the server demands in the handshake (issue #138).
@@ -2728,18 +2714,24 @@ pub struct WebSocketEndpoint {
 
 #[tauri::command]
 pub async fn get_websocket_endpoint() -> Result<WebSocketEndpoint, String> {
-    let port = get_websocket_port().await?;
+    use std::sync::atomic::Ordering;
+
+    let not_started = || "WebSocket server not yet started".to_string();
+    let port = crate::WEBSOCKET_PORT.load(Ordering::SeqCst);
+    if port == 0 {
+        return Err(not_started());
+    }
     let token = crate::WEBSOCKET_TOKEN
         .get()
         .cloned()
-        .ok_or_else(|| "WebSocket server not yet started".to_string())?;
+        .ok_or_else(not_started)?;
     Ok(WebSocketEndpoint { port, token })
 }
 
 // ========== PTY Connection ==========
 // PTY terminal I/O now uses WebSocket instead of IPC for better performance
 // WebSocket server runs on a dynamically assigned port (9001-9010)
-// Use get_websocket_port() command to get the actual port
+// The webview gets the port and the token from get_websocket_endpoint()
 // See src/websocket_server.rs for implementation
 
 // ========== Standalone SFTP Connection ==========
