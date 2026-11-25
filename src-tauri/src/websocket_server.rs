@@ -523,6 +523,20 @@ fn should_remove_pty_state(active_gen: Option<u64>, closed_gen: Option<u64>) -> 
     }
 }
 
+/// Binds the first free loopback port of `preferred`, so that several instances
+/// get neighbouring ports. When they are all taken it binds any free port: the
+/// webview learns the port from the backend, and a busy range must not leave
+/// the app without terminals.
+async fn bind_bridge(preferred: std::ops::RangeInclusive<u16>) -> std::io::Result<TcpListener> {
+    for port in preferred {
+        match TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await {
+            Ok(listener) => return Ok(listener),
+            Err(e) => tracing::warn!("Port {} unavailable: {}, trying next...", port, e),
+        }
+    }
+    TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await
+}
+
 impl WebSocketServer {
     pub(crate) fn new(
         connection_manager: Arc<ConnectionManager>,
@@ -531,29 +545,12 @@ impl WebSocketServer {
         Self { connection_manager, local_shells }
     }
 
-    /// Start the WebSocket server, trying ports 9001-9010 to find an available one
+    /// Start the WebSocket server on the first free port of 9001-9010, or on
+    /// any free port when they are all taken.
     pub async fn start(self: Arc<Self>) -> Result<()> {
-        // Try ports 9001-9010 to find an available one
-        let mut listener = None;
-        let mut bound_port = 0u16;
-
-        for port in 9001..=9010 {
-            let addr: SocketAddr = format!("127.0.0.1:{}", port).parse()?;
-            match TcpListener::bind(&addr).await {
-                Ok(l) => {
-                    tracing::info!("WebSocket server listening on {}", addr);
-                    listener = Some(l);
-                    bound_port = port;
-                    break;
-                }
-                Err(e) => {
-                    tracing::warn!("Port {} unavailable: {}, trying next...", port, e);
-                }
-            }
-        }
-
-        let listener = listener
-            .ok_or_else(|| anyhow::anyhow!("Failed to bind to any port in range 9001-9010"))?;
+        let listener = bind_bridge(9001..=9010).await?;
+        let bound_port = listener.local_addr()?.port();
+        tracing::info!("WebSocket server listening on 127.0.0.1:{}", bound_port);
 
         // The bridge token must exist before the first client can connect.
         WEBSOCKET_TOKEN.get_or_init(generate_bridge_token);
@@ -1344,8 +1341,18 @@ impl WebSocketServer {
 #[cfg(test)]
 mod tests {
     use super::error_code;
-    use super::{decode_input_frame, WsError, WsMessage, BINARY_INPUT_CMD};
+    use super::{bind_bridge, decode_input_frame, WsError, WsMessage, BINARY_INPUT_CMD};
     use crate::connection_manager::PtyStartError;
+
+    #[tokio::test]
+    async fn the_bridge_binds_any_free_port_when_its_usual_ports_are_taken() {
+        let taken = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = taken.local_addr().unwrap().port();
+        let bridge = bind_bridge(port..=port).await.unwrap();
+        let bound = bridge.local_addr().unwrap();
+        assert!(bound.ip().is_loopback());
+        assert_ne!(bound.port(), port);
+    }
 
     #[test]
     fn test_error_message_serde_round_trips_code() {
