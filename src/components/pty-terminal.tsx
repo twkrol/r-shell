@@ -790,7 +790,7 @@ export function PtyTerminal({
         ws = new WebSocket(wsUrl);
       } catch (error) {
         if (localShell) retryLocalAttach();
-        else {
+        else if (attemptIsCurrent()) {
           // No endpoint means the bridge is not running: nothing to dial and nothing to retry.
           console.error('[PTY Terminal] Bridge endpoint unavailable:', error);
           reportSocketError();

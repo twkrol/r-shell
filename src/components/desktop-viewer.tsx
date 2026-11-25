@@ -171,6 +171,7 @@ export function DesktopViewer({
       try {
         wsUrl = await getWebSocketUrl();
       } catch (error) {
+        if (cancelled) return;
         // No endpoint means the bridge is not running: show the disconnected screen.
         console.error('[DesktopViewer] Bridge endpoint unavailable:', error);
         setIsLoading(false);

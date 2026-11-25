@@ -14,10 +14,12 @@ export interface WebSocketEndpoint {
  * requires a per-launch token in the handshake; it is only ever handed to this
  * webview via IPC, so it must travel in the query string of every connection.
  *
- * The token is also the only sign that the listener is this app's bridge.
- * Without an endpoint (the bridge did not start, or there is no backend) this
- * rejects: any program may hold a fixed port, and it would get the terminal
- * input.
+ * The token proves this app to the bridge, not the bridge to this app. The
+ * only evidence that a listener is the bridge is that the backend named its
+ * port, which it does after binding it. So a port never comes from anywhere
+ * else: without an endpoint (the bridge did not start, or there is no
+ * backend) this rejects, because any program may hold a fixed port and would
+ * get the terminal input.
  */
 export async function getWebSocketUrl(): Promise<string> {
   const { port, token } = await invoke<WebSocketEndpoint>('get_websocket_endpoint');

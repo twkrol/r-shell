@@ -246,7 +246,7 @@ VS Code-like resizable panel layout with presets:
 
 ## Common Pitfalls & Notes
 
-1. **WebSocket port is dynamic**: The server tries ports 9001–9010 and stores the bound port in a global `AtomicU16`. Frontend retrieves it via `get_websocket_port` command.
+1. **WebSocket port is dynamic**: The server tries ports 9001–9010 and stores the bound port in a global `AtomicU16`. The frontend gets the port and the per-launch token from the `get_websocket_endpoint` command and never connects without them.
 2. **PTY generation counters**: Each `StartPty` increments a generation counter. `Close` messages include the generation to prevent stale closes from killing newly created sessions (important for React component remounting).
 3. **Connection cancellation**: Pending connections can be cancelled via `CancellationToken`. Always clean up pending state.
 4. **Path alias**: Use `@/` imports in TypeScript (resolves to `src/`). Configured in both `tsconfig.json` and `vite.config.ts`.
