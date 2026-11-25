@@ -6,12 +6,11 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => invoke(...args),
 }));
 
-import { DEFAULT_WS_PORT, getWebSocketUrl } from '../lib/websocket-endpoint';
+import { getWebSocketUrl } from '../lib/websocket-endpoint';
 
 describe('getWebSocketUrl (bridge handshake token, issue #138)', () => {
   beforeEach(() => {
     invoke.mockReset();
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   it('asks the backend for the endpoint and puts the token in the query string', async () => {
@@ -27,10 +26,13 @@ describe('getWebSocketUrl (bridge handshake token, issue #138)', () => {
     await expect(getWebSocketUrl()).resolves.toBe('ws://127.0.0.1:9001/?token=a%2Bb%2Fc%3D');
   });
 
-  it('falls back to the default port without a token when the backend is unavailable', async () => {
-    invoke.mockRejectedValue(new Error('no backend'));
+  it('gives no address without a token, so nothing is sent to a port that another program may hold', async () => {
+    invoke.mockRejectedValue(new Error('WebSocket bridge is not running'));
+    await expect(getWebSocketUrl()).rejects.toThrow('WebSocket bridge is not running');
 
-    await expect(getWebSocketUrl()).resolves.toBe(`ws://127.0.0.1:${DEFAULT_WS_PORT}`);
-    expect(console.warn).toHaveBeenCalled();
+    for (const endpoint of [{ port: 9001, token: '' }, { port: 0, token: 'abc' }, { port: 9001.5, token: 'abc' }]) {
+      invoke.mockResolvedValue(endpoint);
+      await expect(getWebSocketUrl()).rejects.toThrow('Invalid bridge endpoint');
+    }
   });
 });

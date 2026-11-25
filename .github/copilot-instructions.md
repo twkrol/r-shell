@@ -8,7 +8,7 @@ R-Shell is a modern SSH client built with **React 19 + TypeScript (frontend)** a
 ### Dual Communication Model
 - **Tauri Commands** (`invoke()`): One-off operations like connection setup, file operations, system stats
 - **WebSocket (Port 9001)**: Bidirectional streaming for interactive PTY terminal sessions
-  - Frontend: [pty-terminal.tsx](src/components/pty-terminal.tsx) connects to `ws://127.0.0.1:9001`
+  - Frontend: [pty-terminal.tsx](src/components/pty-terminal.tsx) connects to the address from `getWebSocketUrl()` (port 9001–9010 and a per-launch token from the `get_websocket_endpoint` command)
   - Backend: [websocket_server.rs](src-tauri/src/websocket_server.rs) manages PTY I/O with flow control
   - See `WsMessage` enum for message protocol (StartPty, Input, Output, Resize, Pause/Resume, Close)
 

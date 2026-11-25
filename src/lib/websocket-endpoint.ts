@@ -1,20 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 
-/** Port the bridge falls back to when the backend cannot be asked (browser dev mode). */
-export const DEFAULT_WS_PORT = 9001;
-
 /** Shape returned by the `get_websocket_endpoint` Tauri command. */
 export interface WebSocketEndpoint {
   port: number;
   token: string;
-}
-
-// Local shells must never disclose their run handle or terminal input to the
-// unauthenticated fallback port used by the browser-only development mode.
-export async function getAuthenticatedWebSocketUrl(): Promise<string> {
-  const { port, token } = await invoke<WebSocketEndpoint>('get_websocket_endpoint');
-  if (!token || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid bridge endpoint');
-  return `ws://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`;
 }
 
 /**
@@ -25,15 +14,15 @@ export async function getAuthenticatedWebSocketUrl(): Promise<string> {
  * requires a per-launch token in the handshake; it is only ever handed to this
  * webview via IPC, so it must travel in the query string of every connection.
  *
- * Without a backend (plain `pnpm dev` in a browser) there is no token; the
- * default port is returned so the failure surfaces as a normal connection
- * error rather than an exception here.
+ * The token proves this app to the bridge, not the bridge to this app. The
+ * only evidence that a listener is the bridge is that the backend named its
+ * port, which it does after binding it. So a port never comes from anywhere
+ * else: without an endpoint (the bridge did not start, or there is no
+ * backend) this rejects, because any program may hold a fixed port and would
+ * get the terminal input.
  */
 export async function getWebSocketUrl(): Promise<string> {
-  try {
-    return await getAuthenticatedWebSocketUrl();
-  } catch (e) {
-    console.warn('[WebSocket] Failed to get bridge endpoint, using default port without token:', e);
-    return `ws://127.0.0.1:${DEFAULT_WS_PORT}`;
-  }
+  const { port, token } = await invoke<WebSocketEndpoint>('get_websocket_endpoint');
+  if (!token || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid bridge endpoint');
+  return `ws://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`;
 }

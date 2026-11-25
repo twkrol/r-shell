@@ -21,6 +21,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 const lifecycle = vi.hoisted(() => ({
   invoke: vi.fn(),
   readClipboard: vi.fn<() => Promise<string>>(),
+  webSocketUrl: vi.fn<() => Promise<string>>(),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -35,7 +36,7 @@ vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({
   writeText: async () => {},
 }));
 vi.mock('@/lib/websocket-endpoint', () => ({
-  getWebSocketUrl: async () => 'ws://127.0.0.1:9999',
+  getWebSocketUrl: () => lifecycle.webSocketUrl(),
 }));
 vi.mock('@/lib/notifications', () => ({
   notify: { error: vi.fn(), info: vi.fn(), success: vi.fn(), warning: vi.fn() },
@@ -113,6 +114,7 @@ describe('DesktopViewer window-fit scaling', () => {
     vi.useFakeTimers();
     lifecycle.invoke.mockReset();
     lifecycle.readClipboard.mockReset().mockResolvedValue('');
+    lifecycle.webSocketUrl.mockReset().mockResolvedValue('ws://127.0.0.1:9999');
     // Call sites chain .catch() on the returned value.
     lifecycle.invoke.mockImplementation(async () => {});
     FakeResizeObserver.instances = [];
@@ -547,6 +549,16 @@ describe('DesktopViewer window-fit scaling', () => {
     expect(call![1]).toEqual(
       expect.objectContaining({ connectionId: 'conn-1', width: 800, height: 450 }),
     );
+  });
+
+  it('opens no socket and shows the disconnected screen when the bridge has no endpoint', async () => {
+    lifecycle.webSocketUrl.mockRejectedValue(new Error('WebSocket server not yet started'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<DesktopViewer {...viewerProps()} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(FakeWebSocket.instances).toHaveLength(0);
+    expect(screen.getByText('Desktop Disconnected')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reconnect' })).toBeTruthy();
   });
 
   it('does not request a resize while disconnected', async () => {
