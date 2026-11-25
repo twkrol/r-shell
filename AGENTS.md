@@ -33,13 +33,13 @@ R-Shell is a modern desktop SSH client built with **React 19 + TypeScript** (fro
 | SSH client | `src-tauri/src/ssh/mod.rs` | Connection, auth (password/publickey), PTY, SFTP |
 | Connection manager | `src-tauri/src/connection_manager.rs` | Thread-safe session lifecycle (`Arc<RwLock<HashMap>>`) |
 | Tauri commands | `src-tauri/src/commands.rs` | 27+ IPC commands exposed to frontend |
-| WebSocket server | `src-tauri/src/websocket_server.rs` | PTY I/O streaming on port 9001-9010 |
+| WebSocket server | `src-tauri/src/websocket_server.rs` | PTY I/O streaming on port 9001-9010, or any free port when those are taken |
 | App setup | `src-tauri/src/lib.rs` | Plugin init, command registration, WS server spawn |
 
 ### Communication Model
 
 1. **Tauri Commands** (`invoke()`): Request/response for one-off operations (connect, execute command, file ops, system stats)
-2. **WebSocket** (`ws://127.0.0.1:{9001-9010}`): Bidirectional streaming for interactive PTY terminal sessions
+2. **WebSocket** (`ws://127.0.0.1:{port}`, port 9001-9010 or any free port when those are taken): Bidirectional streaming for interactive PTY terminal sessions
 
 The WebSocket protocol uses a tagged `WsMessage` enum:
 - `StartPty` / `PtyStarted` — session lifecycle with generation counters

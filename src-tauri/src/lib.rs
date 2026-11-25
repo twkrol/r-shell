@@ -393,7 +393,7 @@ pub fn run() {
                 }
 
                 // Start WebSocket server for terminal I/O
-                // Try ports 9001-9010 to avoid conflicts with other instances
+                // Ports 9001-9010 first, so that instances do not collide, then any free port
                 let ws_server = Arc::new(WebSocketServer::new(connection_manager_clone, local_shells));
                 tauri::async_runtime::spawn(async move {
                     if let Err(e) = ws_server.start().await {
@@ -647,7 +647,7 @@ pub fn run() {
             commands::stop_socks_proxy,
             commands::list_socks_proxies,
             // Note: PTY terminal I/O now uses WebSocket instead of IPC
-            // WebSocket server runs on a dynamically assigned port (9001-9010)
+            // WebSocket server runs on a dynamically assigned port (9001-9010, or any free one)
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

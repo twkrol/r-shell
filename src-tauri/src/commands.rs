@@ -2730,7 +2730,7 @@ pub async fn get_websocket_endpoint() -> Result<WebSocketEndpoint, String> {
 
 // ========== PTY Connection ==========
 // PTY terminal I/O now uses WebSocket instead of IPC for better performance
-// WebSocket server runs on a dynamically assigned port (9001-9010)
+// WebSocket server runs on a dynamically assigned port
 // The webview gets the port and the token from get_websocket_endpoint()
 // See src/websocket_server.rs for implementation
 
