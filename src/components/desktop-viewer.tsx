@@ -167,7 +167,16 @@ export function DesktopViewer({
     let renderer: DesktopFrameRenderer | null = null;
     const connect = async () => {
       // Port + per-launch bridge token from the backend (issue #138).
-      const wsUrl = await getWebSocketUrl();
+      let wsUrl: string;
+      try {
+        wsUrl = await getWebSocketUrl();
+      } catch (error) {
+        // No endpoint means the bridge is not running: show the disconnected screen.
+        console.error('[DesktopViewer] Bridge endpoint unavailable:', error);
+        setIsLoading(false);
+        setSessionMissing(true);
+        return;
+      }
 
       if (cancelled) return;
 

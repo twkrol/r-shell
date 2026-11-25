@@ -370,4 +370,26 @@ describe('PtyTerminal ssh_session_dead escalation', () => {
       expect.stringContaining(i18n.t('ptyTerminal.sshSessionDeadPermanent')),
     );
   });
+
+  it('opens no socket and shows the tab as disconnected when the bridge has no endpoint', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const original = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation(async (command, ...rest) => {
+      if (command === 'get_websocket_endpoint') throw new Error('WebSocket server not yet started');
+      return original(command, ...rest);
+    });
+    try {
+      const onStatusChange = vi.fn();
+      renderTerminal('conn-no-bridge', onStatusChange);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60);
+      });
+      // Nothing may be sent to a port that another program can hold.
+      expect(mocks.webSockets).toHaveLength(0);
+      expect(onStatusChange).toHaveBeenLastCalledWith('conn-no-bridge', 'disconnected');
+      expect(lastTerminal().write).toHaveBeenCalledWith(expect.stringContaining(i18n.t('ptyTerminal.webSocketError')));
+    } finally {
+      vi.mocked(invoke).mockImplementation(original);
+    }
+  });
 });

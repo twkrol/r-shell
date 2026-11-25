@@ -13,7 +13,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { readText as readClipboardText, writeText as writeClipboardText } from '@tauri-apps/plugin-clipboard-manager';
-import { getAuthenticatedWebSocketUrl, getWebSocketUrl } from '@/lib/websocket-endpoint';
+import { getWebSocketUrl } from '@/lib/websocket-endpoint';
 import { loadAppearanceSettings, getThemeAwareTerminalOptions, getThemeAwareTerminalTheme, terminalThemes, defaultTerminalTheme } from '../lib/terminal-config';
 import { TerminalContextMenu } from './terminal/terminal-context-menu';
 import { TerminalSearchBar, type TerminalSearchState } from './terminal/terminal-search-bar';
@@ -777,13 +777,24 @@ export function PtyTerminal({
         startPtyWatchdog = setTimeout(retryLocalAttach,
           Math.min(START_PTY_WATCHDOG_MS, Math.max(0, localReconnectBy - Date.now())));
       }
+      const reportSocketError = () => {
+        term.write(`\r\n\x1b[31m${i18n.t('ptyTerminal.webSocketError')}\x1b[0m\r\n`);
+        if (connectionStatusRef.current !== 'disconnected') {
+          connectionStatusRef.current = 'disconnected';
+          onConnectionStatusChange?.(connectionId, 'disconnected');
+        }
+      };
       try {
-        const wsUrl = await (localShell ? getAuthenticatedWebSocketUrl() : getWebSocketUrl());
+        const wsUrl = await getWebSocketUrl();
         if (!attemptIsCurrent()) return;
         ws = new WebSocket(wsUrl);
       } catch (error) {
-        if (!localShell) throw error;
-        retryLocalAttach();
+        if (localShell) retryLocalAttach();
+        else {
+          // No endpoint means the bridge is not running: nothing to dial and nothing to retry.
+          console.error('[PTY Terminal] Bridge endpoint unavailable:', error);
+          reportSocketError();
+        }
         return;
       }
       // Receive PTY output as ArrayBuffer so we can avoid the JSON overhead of
@@ -1156,12 +1167,7 @@ export function PtyTerminal({
       ws.onerror = (error) => {
         if (localShell) return; // Socket close handles local transport recovery.
         console.error('[PTY Terminal] WebSocket error:', error);
-        term.write(`\r\n\x1b[31m${i18n.t('ptyTerminal.webSocketError')}\x1b[0m\r\n`);
-        // Report disconnected status on WebSocket error
-        if (connectionStatusRef.current !== 'disconnected') {
-          connectionStatusRef.current = 'disconnected';
-          onConnectionStatusChange?.(connectionId, 'disconnected');
-        }
+        reportSocketError();
       };
 
       ws.onclose = () => {
